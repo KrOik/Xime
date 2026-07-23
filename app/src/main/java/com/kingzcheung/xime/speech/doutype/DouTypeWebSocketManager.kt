@@ -13,7 +13,7 @@ class DouTypeWebSocketManager(private val context: Context, private val onResult
     private var socket: WebSocket? = null; private val task = UUID.randomUUID().toString(); private var firstFrame = true; private var credentials: DouTypeCredentials? = null
     fun connect(): Boolean { state = RecognitionState.PROCESSING; onState(state); return try { credentials = DouTypeCredentialManager(context).ensure(); val c = credentials!!; val req = Request.Builder().url("wss://frontier-audio-ime-ws.doubao.com/ocean/api/v1/ws?aid=401734&device_id=${c.deviceId}").header("Authorization", "Bearer ${c.token}").header("Sec-WebSocket-Protocol", "frontier-v2").build(); socket = OkHttpClient().newWebSocket(req, Listener()); true } catch (e: Exception) { state = RecognitionState.ERROR; onState(state); onError("DouType 自动注册失败: ${e.message ?: "网络不可用"}"); false } }
     fun sendAudio(data: ByteArray) { data.asList().chunked(640).forEach { chunk -> val audio=chunk.toByteArray().let { if(it.size<640) it+ByteArray(640-it.size) else it }; socket?.send(ByteString.of(*audioEnvelope(audio, if(firstFrame) 1 else 3))); firstFrame=false } }
-    fun finish() { socket?.send(ByteString.of(*audioEnvelope(ByteArray(640), 9))); socket?.send(ByteString.of(*concat(str(2,key),str(3,"ASR"),str(5,"FinishSession"),str(8,task)))) }
+    fun finish() { socket?.send(ByteString.of(*audioEnvelope(ByteArray(640), 9))); socket?.send(ByteString.of(*control("FinishSession", ""))) }
     fun close() { socket?.cancel(); socket = null; state = RecognitionState.IDLE; onState(state) }
     private inner class Listener : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) { webSocket.send(ByteString.of(*control("StartTask", ""))) }

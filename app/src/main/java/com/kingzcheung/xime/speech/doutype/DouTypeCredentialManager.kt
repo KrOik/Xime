@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 
 data class DouTypeCredentials(val deviceId: String, val productKey: String, val token: String)
 
+@Suppress("DEPRECATION")
 class DouTypeCredentialManager(private val context: Context) {
     companion object {
         private const val PREFS = "doutype_credentials"
