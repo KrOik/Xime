@@ -21,5 +21,9 @@ class DouTypeAsrBackend(private val context: Context) : AsrBackend {
     override fun cancel() { ws?.close() }
     override fun release() { ws?.close(); ws = null }
     override fun getState() = ws?.state ?: RecognitionState.IDLE
-    override fun isAvailable() = SettingsPreferences.isDouTypeEnabled(context)
+    override fun isAvailable(): Boolean {
+        if (SettingsPreferences.isSttUseLocal(context)) return false
+        if (SettingsPreferences.getSttProvider(context) != "doutype") return false
+        return SettingsPreferences.isDouTypeEnabled(context)
+    }
 }

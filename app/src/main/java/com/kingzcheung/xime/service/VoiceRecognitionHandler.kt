@@ -55,25 +55,44 @@ class VoiceRecognitionHandler(
             }
         )
 
-        val useLocal = SettingsPreferences.isSttUseLocal(context)
-        val providerName = if (useLocal) {
-            val sherpaEngine = SherpaAsrEngine(context)
-            sherpaEngine.getSelectedModelInfo()?.name ?: "本地模型"
-        } else {
-            val apiKey = SettingsPreferences.getFunAsrApiKey(context)
-            if (apiKey.isNotEmpty()) "阿里百炼" else "未配置"
-        }
-
+        val providerName = resolveProviderName()
         onStateChanged(getState().copy(voicePluginName = providerName))
-        FileLogger.i(TAG, "STT provider: ${if (useLocal) "local" else "funasr"}")
+        FileLogger.i(
+            TAG,
+            "STT provider: ${if (SettingsPreferences.isSttUseLocal(context)) "local" else SettingsPreferences.getSttProvider(context)} ($providerName)"
+        )
 
-        if (useLocal && SettingsPreferences.isSttEnabled(context)) {
+        if (SettingsPreferences.isSttEnabled(context) && SettingsPreferences.isSttUseLocal(context)) {
             Thread {
                 try {
                     speechRecognitionManager.preload()
                     initPunctuationModel()
                 } catch (_: Exception) { }
             }.start()
+        }
+    }
+
+    private fun resolveProviderName(): String {
+        if (SettingsPreferences.isSttUseLocal(context)) {
+            val sherpaEngine = SherpaAsrEngine(context)
+            return sherpaEngine.getSelectedModelInfo()?.name ?: "本地模型"
+        }
+        return when (SettingsPreferences.getSttProvider(context)) {
+            "doutype" -> {
+                if (SettingsPreferences.isDouTypeEnabled(context)) {
+                    "DouType 在线"
+                } else {
+                    "DouType 未启用"
+                }
+            }
+            "funasr" -> {
+                if (SettingsPreferences.getFunAsrApiKey(context).isNotEmpty()) {
+                    "阿里百炼"
+                } else {
+                    "未配置"
+                }
+            }
+            else -> "未配置"
         }
     }
     
@@ -136,15 +155,7 @@ class VoiceRecognitionHandler(
         textLengthBeforeVoiceInput = textBeforeVoiceInput.length
         Log.d("VoiceButtons", "Saved text before voice: length=$textLengthBeforeVoiceInput")
 
-        val useLocal = SettingsPreferences.isSttUseLocal(context)
-        val providerName = if (useLocal) {
-            val sherpaEngine = SherpaAsrEngine(context)
-            sherpaEngine.getSelectedModelInfo()?.name ?: "本地模型"
-        } else {
-            val apiKey = SettingsPreferences.getFunAsrApiKey(context)
-            if (apiKey.isNotEmpty()) "阿里百炼" else "未配置"
-        }
-        onStateChanged(getState().copy(voicePluginName = providerName))
+        onStateChanged(getState().copy(voicePluginName = resolveProviderName()))
 
         speechRecognitionManager.startRecognition()
         Log.d("VoiceButtons", "Speech recognition starting")

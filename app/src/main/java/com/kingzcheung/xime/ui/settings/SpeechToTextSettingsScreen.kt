@@ -157,7 +157,16 @@ fun SpeechToTextSettingsContent(
                 OnlineAsrTab(
                     providers = onlineProviders,
                     selectedProvider = selectedOnlineProvider,
-                    onProviderSelect = { provider -> selectedOnlineProvider = provider.id; SettingsPreferences.setSttProvider(context, provider.id); SettingsPreferences.setSttUseLocal(context, false); useLocal = false },
+                    onProviderSelect = { provider ->
+                        selectedOnlineProvider = provider.id
+                        SettingsPreferences.setSttProvider(context, provider.id)
+                        SettingsPreferences.setSttUseLocal(context, false)
+                        SettingsPreferences.setSttEnabled(context, true)
+                        useLocal = false
+                        if (provider.id == "doutype") {
+                            SettingsPreferences.setDouTypeEnabled(context, true)
+                        }
+                    },
                     onProviderClick = { provider ->
                         if (provider.id == "funasr") {
                             onNavigateToFunAsrSettings()

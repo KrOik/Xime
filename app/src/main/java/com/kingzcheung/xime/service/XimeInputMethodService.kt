@@ -356,9 +356,12 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
                     applyFloatingWindowBackground()
                     Log.d(TAG, "Floating mode changed: $key")
                 }
-                "stt_enabled" -> {
-                    uiState.value = uiState.value.copy(isSttEnabled = SettingsPreferences.isSttEnabled(this@XimeInputMethodService))
-                    Log.d(TAG, "STT setting changed: $key -> ${SettingsPreferences.isSttEnabled(this@XimeInputMethodService)}")
+                "stt_enabled", "stt_provider", "stt_use_local", "doutype_enabled" -> {
+                    uiState.value = uiState.value.copy(
+                        isSttEnabled = SettingsPreferences.isSttEnabled(this@XimeInputMethodService)
+                    )
+                    // 输入法进程内刷新显示名称；下次启动语音时也会重新解析
+                    Log.d(TAG, "STT setting changed: $key")
                 }
             }
         }
