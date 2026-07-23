@@ -497,6 +497,7 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
+    testImplementation("org.json:json:20250517")
     
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
