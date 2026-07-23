@@ -193,6 +193,8 @@ class VoiceRecognitionHandler(
         if (cleanText.isNotEmpty() && !cleanText.startsWith("错误:")) {
             val ic = getInputConnection()
             if (ic != null) {
+                // 先结束 composing，再提交最终文本，避免与 partial 叠加
+                ic.finishComposingText()
                 val punctuatedText = addPunctuation(cleanText)
                 ic.commitText(punctuatedText, 1)
             }
