@@ -123,11 +123,17 @@ fun SettingsScreen(
             SpeechToTextSettingsContent(
                 onBack = { navController.popBackStack() },
                 onNavigateToFunAsrSettings = { navController.navigate(SettingsRoutes.FunAsrSettings) },
+                onNavigateToAsrServiceSettings = { navController.navigate(SettingsRoutes.AsrServiceSettings) },
                 onNavigateToModelManagement = { navController.navigate(SettingsRoutes.ModelManagement) }
             )
         }
         composable(SettingsRoutes.FunAsrSettings) {
             FunAsrSettingsContent(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(SettingsRoutes.AsrServiceSettings) {
+            AsrServiceSettingsContent(
                 onBack = { navController.popBackStack() }
             )
         }

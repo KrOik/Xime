@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Storage
@@ -46,7 +47,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -74,7 +74,8 @@ data class AsrProvider(
     val isOnline: Boolean,
     val isConfigured: Boolean,
     val features: List<String> = emptyList(),
-    val needsAutoPunctuation: Boolean = false
+    val needsAutoPunctuation: Boolean = false,
+    val isSelected: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,13 +83,17 @@ data class AsrProvider(
 fun SpeechToTextSettingsContent(
     onBack: () -> Unit,
     onNavigateToFunAsrSettings: () -> Unit,
+    onNavigateToAsrServiceSettings: () -> Unit,
     onNavigateToModelManagement: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var useLocal by remember { mutableStateOf(SettingsPreferences.isSttUseLocal(context)) }
 
-    val onlineProviders = remember {
-        mutableStateListOf(
+    var selectedProviderId by remember {
+        mutableStateOf(SettingsPreferences.getSttProvider(context))
+    }
+
+    val onlineProviders = listOf(
             AsrProvider(
                 id = "funasr",
                 name = "阿里百炼 FunAsr",
@@ -96,10 +101,20 @@ fun SpeechToTextSettingsContent(
                 iconRes = R.drawable.bailian,
                 isOnline = true,
                 isConfigured = SettingsPreferences.getFunAsrApiKey(context).isNotEmpty(),
-                features = listOf("实时流式", "高准确率", "多格式支持")
+                features = listOf("实时流式", "高准确率", "多格式支持"),
+                isSelected = selectedProviderId == "funasr"
+            ),
+            AsrProvider(
+                id = "asr_service",
+                name = "自建 ASR 服务",
+                description = "通过标准 HTTPS 实时转写 API 接入",
+                icon = Icons.Default.CloudQueue,
+                isOnline = true,
+                isConfigured = SettingsPreferences.getAsrServiceUrl(context).isNotBlank(),
+                features = listOf("私有部署", "Bearer 鉴权", "流式转写"),
+                isSelected = selectedProviderId == "asr_service"
             )
         )
-    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -146,8 +161,11 @@ fun SpeechToTextSettingsContent(
                 OnlineAsrTab(
                     providers = onlineProviders,
                     onProviderClick = { provider ->
-                        if (provider.id == "funasr") {
-                            onNavigateToFunAsrSettings()
+                        selectedProviderId = provider.id
+                        SettingsPreferences.setSttProvider(context, provider.id)
+                        when (provider.id) {
+                            "funasr" -> onNavigateToFunAsrSettings()
+                            "asr_service" -> onNavigateToAsrServiceSettings()
                         }
                     }
                 )
@@ -869,7 +887,7 @@ fun AsrProviderCardModern(
                 if (enabled) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (provider.isConfigured)
+                        color = if (provider.isSelected || provider.isConfigured)
                             MaterialTheme.colorScheme.primary
                         else
                             MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
@@ -879,7 +897,20 @@ fun AsrProviderCardModern(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            if (provider.isConfigured) {
+                            if (provider.isSelected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "使用中",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            } else if (provider.isConfigured) {
                                 Icon(
                                     Icons.Default.Check,
                                     contentDescription = null,

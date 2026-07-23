@@ -31,6 +31,7 @@ class SpeechRecognitionManager(private val context: Context) {
     }
 
     private var backend: AsrBackend? = null
+    private var backendConfigKey: String? = null
     private var recordingThread: RecordingThread? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -62,6 +63,15 @@ class SpeechRecognitionManager(private val context: Context) {
             return
         }
 
+        val currentConfigKey = currentBackendConfigKey()
+        if (backend != null && backendConfigKey != currentConfigKey) {
+            FileLogger.i(TAG, "ASR configuration changed, recreating backend")
+            ModelRuntime.releaseWarm("asr")
+            backend?.release()
+            backend = null
+            backendConfigKey = null
+        }
+
         FileLogger.i(TAG, "Starting speech recognition")
         stateCallback?.invoke(RecognitionState.PROCESSING)
 
@@ -78,6 +88,7 @@ class SpeechRecognitionManager(private val context: Context) {
                 return
             }
             backend = newBackend
+            backendConfigKey = currentConfigKey
 
             newBackend.setCallbacks(
                 onResult = { text -> handleResult(text) },
@@ -97,6 +108,7 @@ class SpeechRecognitionManager(private val context: Context) {
                 errorCallback?.invoke(msg)
                 stateCallback?.invoke(RecognitionState.ERROR)
                 backend = null
+                backendConfigKey = null
                 return
             }
             
@@ -139,6 +151,7 @@ class SpeechRecognitionManager(private val context: Context) {
                     ModelRuntime.releaseWarm("asr")
                     backend?.release()
                     backend = null
+                    backendConfigKey = null
                 }
             }
         }.start()
@@ -162,6 +175,7 @@ class SpeechRecognitionManager(private val context: Context) {
                     ModelRuntime.releaseWarm("asr")
                     backend?.release()
                     backend = null
+                    backendConfigKey = null
                 }
             }
         }.start()
@@ -210,6 +224,7 @@ class SpeechRecognitionManager(private val context: Context) {
         cancelRecognition()
         backend?.release()
         backend = null
+        backendConfigKey = null
     }
 
     private var isPreloading = false
@@ -220,8 +235,15 @@ class SpeechRecognitionManager(private val context: Context) {
     }
 
     fun preload() {
+        val currentConfigKey = currentBackendConfigKey()
         synchronized(preloadLock) {
-            if (backend != null) return
+            if (backend != null && backendConfigKey == currentConfigKey) return
+            if (backend != null) {
+                ModelRuntime.releaseWarm("asr")
+                backend?.release()
+                backend = null
+                backendConfigKey = null
+            }
             isPreloading = true
         }
         
@@ -251,6 +273,7 @@ class SpeechRecognitionManager(private val context: Context) {
 
         synchronized(preloadLock) {
             backend = newBackend
+            backendConfigKey = currentConfigKey
             isPreloading = false
             preloadLock.notifyAll()
         }
@@ -280,6 +303,18 @@ class SpeechRecognitionManager(private val context: Context) {
                 }
                 else -> FunAsrAsrBackend(context)
             }
+        }
+    }
+
+    private fun currentBackendConfigKey(): String {
+        if (SettingsPreferences.isSttUseLocal(context)) return "local"
+        return when (val provider = SettingsPreferences.getSttProvider(context)) {
+            "asr_service" -> {
+                val url = SettingsPreferences.getAsrServiceUrl(context)
+                val tokenHash = AsrServiceCredentialStore(context).getToken().hashCode()
+                "online:$provider:$url:$tokenHash"
+            }
+            else -> "online:funasr:${SettingsPreferences.getFunAsrApiKey(context).hashCode()}"
         }
     }
 
