@@ -13,9 +13,7 @@ class DouTypeAsrBackend(private val context: Context) : AsrBackend {
     private var error: ((String) -> Unit)? = null
     override fun setCallbacks(onResult: (String) -> Unit, onPartialResult: ((String) -> Unit)?, onStateChange: (RecognitionState) -> Unit, onError: (String) -> Unit) { result = onResult; state = onStateChange; error = onError }
     override fun initialize(): Boolean {
-        val key = SettingsPreferences.getDouTypeApiKey(context)
-        if (key.isBlank()) return false
-        ws = DouTypeWebSocketManager(key, { result?.invoke(it) }, { state?.invoke(it) }, { error?.invoke(it) }); return true
+        ws = DouTypeWebSocketManager(context, { result?.invoke(it) }, { state?.invoke(it) }, { error?.invoke(it) }); return true
     }
     override fun start() = ws?.connect() ?: false
     override fun processAudioChunk(buffer: ByteArray) { ws?.sendAudio(buffer) }
@@ -23,5 +21,5 @@ class DouTypeAsrBackend(private val context: Context) : AsrBackend {
     override fun cancel() { ws?.close() }
     override fun release() { ws?.close(); ws = null }
     override fun getState() = ws?.state ?: RecognitionState.IDLE
-    override fun isAvailable() = SettingsPreferences.getDouTypeApiKey(context).isNotBlank()
+    override fun isAvailable() = SettingsPreferences.isDouTypeEnabled(context)
 }

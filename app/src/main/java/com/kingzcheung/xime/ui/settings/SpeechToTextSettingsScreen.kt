@@ -106,7 +106,7 @@ fun SpeechToTextSettingsContent(
                 description = "豆包输入法在线语音识别",
                 icon = Icons.Default.CloudDownload,
                 isOnline = true,
-                isConfigured = SettingsPreferences.getDouTypeApiKey(context).isNotEmpty(),
+                isConfigured = SettingsPreferences.isDouTypeEnabled(context),
                 features = listOf("实时流式", "自动标点", "多阶段纠错")
             )
         )

@@ -26,7 +26,14 @@ object SettingsPreferences {
     private const val KEY_STT_ENABLED = "stt_enabled"
     private const val KEY_STT_PROVIDER = "stt_provider"
     private const val KEY_FUNASR_API_KEY = "funasr_api_key"
-    private const val KEY_DOUTYPE_API_KEY = "doutype_api_key"
+    private const val KEY_DOUTYPE_ENABLED = "doutype_enabled"
+    private const val KEY_DOUTYPE_PUNCTUATION = "doutype_punctuation"
+    private const val KEY_DOUTYPE_TWOPASS = "doutype_twopass"
+    private const val KEY_DOUTYPE_THREEPASS = "doutype_threepass"
+    private const val KEY_DOUTYPE_SPEECH_REJECTION = "doutype_speech_rejection"
+    private const val KEY_DOUTYPE_SENTENCE_SEG = "doutype_sentence_seg"
+    private const val KEY_DOUTYPE_TIMESTAMP = "doutype_timestamp"
+    private const val KEY_DOUTYPE_REMOVE_SPACES = "doutype_remove_spaces"
     private const val KEY_STT_USE_LOCAL = "stt_use_local"
     private const val KEY_STT_KEEP_MODEL_IN_RAM = "stt_keep_model_in_ram"
     
@@ -317,12 +324,22 @@ object SettingsPreferences {
         getPrefs(context).edit().putString(KEY_FUNASR_API_KEY, apiKey).apply()
     }
 
-    fun getDouTypeApiKey(context: Context): String =
-        getPrefs(context).getString(KEY_DOUTYPE_API_KEY, "") ?: ""
-
-    fun setDouTypeApiKey(context: Context, apiKey: String) {
-        getPrefs(context).edit().putString(KEY_DOUTYPE_API_KEY, apiKey).apply()
-    }
+    fun isDouTypeEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_ENABLED, false)
+    fun setDouTypeEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_ENABLED, value).apply()
+    fun isDouTypePunctuationEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_PUNCTUATION, true)
+    fun setDouTypePunctuationEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_PUNCTUATION, value).apply()
+    fun isDouTypeTwoPassEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_TWOPASS, true)
+    fun setDouTypeTwoPassEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_TWOPASS, value).apply()
+    fun isDouTypeThreePassEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_THREEPASS, true)
+    fun setDouTypeThreePassEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_THREEPASS, value).apply()
+    fun isDouTypeSpeechRejectionEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_SPEECH_REJECTION, false)
+    fun setDouTypeSpeechRejectionEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_SPEECH_REJECTION, value).apply()
+    fun isDouTypeSentenceSegEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_SENTENCE_SEG, true)
+    fun setDouTypeSentenceSegEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_SENTENCE_SEG, value).apply()
+    fun isDouTypeTimestampEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_TIMESTAMP, true)
+    fun setDouTypeTimestampEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_TIMESTAMP, value).apply()
+    fun isDouTypeRemoveSpacesEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_REMOVE_SPACES, true)
+    fun setDouTypeRemoveSpacesEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_REMOVE_SPACES, value).apply()
     
     fun isSttUseLocal(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_STT_USE_LOCAL, false)
