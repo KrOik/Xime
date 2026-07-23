@@ -53,7 +53,6 @@ plugins/kaomoji/build
 # Plugin APKs (development only, not packaged in main app)
 app/src/main/assets/plugins/*.apk
 
-/.skills
 fix_encoding.py
 perf.data
 xime_heap.hprof
