@@ -26,6 +26,7 @@ object SettingsPreferences {
     private const val KEY_STT_ENABLED = "stt_enabled"
     private const val KEY_STT_PROVIDER = "stt_provider"
     private const val KEY_FUNASR_API_KEY = "funasr_api_key"
+    private const val KEY_ASR_SERVICE_URL = "asr_service_url"
     private const val KEY_STT_USE_LOCAL = "stt_use_local"
     private const val KEY_STT_KEEP_MODEL_IN_RAM = "stt_keep_model_in_ram"
     
@@ -314,6 +315,14 @@ object SettingsPreferences {
     
     fun setFunAsrApiKey(context: Context, apiKey: String) {
         getPrefs(context).edit().putString(KEY_FUNASR_API_KEY, apiKey).apply()
+    }
+
+    fun getAsrServiceUrl(context: Context): String {
+        return getPrefs(context).getString(KEY_ASR_SERVICE_URL, "") ?: ""
+    }
+
+    fun setAsrServiceUrl(context: Context, url: String) {
+        getPrefs(context).edit().putString(KEY_ASR_SERVICE_URL, url.trim()).apply()
     }
     
     fun isSttUseLocal(context: Context): Boolean {

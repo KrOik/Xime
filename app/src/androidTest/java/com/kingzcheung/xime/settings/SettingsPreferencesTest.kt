@@ -246,6 +246,15 @@ class SettingsPreferencesTest {
         SettingsPreferences.setFunAsrApiKey(context, apiKey)
         assertEquals(apiKey, SettingsPreferences.getFunAsrApiKey(context))
     }
+
+    @Test
+    fun asrServiceUrlSettings() {
+        assertEquals("", SettingsPreferences.getAsrServiceUrl(context))
+
+        SettingsPreferences.setAsrServiceUrl(context, "  https://asr.example.com  ")
+
+        assertEquals("https://asr.example.com", SettingsPreferences.getAsrServiceUrl(context))
+    }
     
     @Test
     fun schemaSwitchingSequence() {

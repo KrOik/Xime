@@ -13,6 +13,9 @@ import androidx.annotation.RequiresPermission
 import com.kingzcheung.xime.model.ModelRuntime
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.speech.funasr.FunAsrAsrBackend
+import com.kingzcheung.xime.speech.service.AsrServiceAsrBackend
+import com.kingzcheung.xime.speech.service.AsrServiceCredentialStore
+import com.kingzcheung.xime.speech.service.HttpAsrServiceClient
 import com.kingzcheung.xime.speech.sherpa.SherpaAsrBackend
 import com.kingzcheung.xime.util.FileLogger
 
@@ -64,7 +67,8 @@ class SpeechRecognitionManager(private val context: Context) {
 
         if (backend == null) {
             val useLocal = SettingsPreferences.isSttUseLocal(context)
-            FileLogger.i(TAG, "Creating ASR backend: ${if (useLocal) "Sherpa (local)" else "FunAsr (online)"}")
+            val provider = SettingsPreferences.getSttProvider(context)
+            FileLogger.i(TAG, "Creating ASR backend: ${if (useLocal) "Sherpa (local)" else "$provider (online)"}")
             
             val newBackend = createBackend()
             if (newBackend == null) {
@@ -86,6 +90,7 @@ class SpeechRecognitionManager(private val context: Context) {
                 val msg = when {
                     newBackend is SherpaAsrBackend -> "本地模型未下载或引擎未编译"
                     newBackend is FunAsrAsrBackend -> "初始化在线引擎失败，请检查 API Key"
+                    newBackend is AsrServiceAsrBackend -> "初始化 ASR 服务失败，请检查服务地址"
                     else -> "引擎初始化失败"
                 }
                 FileLogger.e(TAG, "Backend initialization failed: $msg")
@@ -125,9 +130,11 @@ class SpeechRecognitionManager(private val context: Context) {
                 Thread.currentThread().interrupt()
             }
             mainHandler.post {
-                stateCallback?.invoke(RecognitionState.IDLE)
-
-                if (!SettingsPreferences.isSttKeepModelInRam(context)) {
+                // 在线后端的 final 通常在线程结束后异步到达，不能在这里强制 IDLE
+                // 或释放后端；“保持模型”只影响本地 Sherpa 模型。
+                if (backend is SherpaAsrBackend &&
+                    !SettingsPreferences.isSttKeepModelInRam(context)
+                ) {
                     Log.d(TAG, "Release mode: freeing backend resources")
                     ModelRuntime.releaseWarm("asr")
                     backend?.release()
@@ -141,7 +148,7 @@ class SpeechRecognitionManager(private val context: Context) {
         Log.d(TAG, "Canceling recognition")
         val thread = recordingThread ?: return
         recordingThread = null
-        thread.interrupt()
+        thread.requestCancel()
         Thread {
             try {
                 thread.join()
@@ -149,9 +156,9 @@ class SpeechRecognitionManager(private val context: Context) {
                 Thread.currentThread().interrupt()
             }
             mainHandler.post {
-                stateCallback?.invoke(RecognitionState.IDLE)
-
-                if (!SettingsPreferences.isSttKeepModelInRam(context)) {
+                if (backend is SherpaAsrBackend &&
+                    !SettingsPreferences.isSttKeepModelInRam(context)
+                ) {
                     ModelRuntime.releaseWarm("asr")
                     backend?.release()
                     backend = null
@@ -253,11 +260,26 @@ class SpeechRecognitionManager(private val context: Context) {
         newBackend.stop()
     }
 
-    private fun createBackend(): AsrBackend {
+    private fun createBackend(): AsrBackend? {
         return if (SettingsPreferences.isSttUseLocal(context)) {
             SherpaAsrBackend(context)
         } else {
-            FunAsrAsrBackend(context)
+            when (SettingsPreferences.getSttProvider(context)) {
+                "asr_service" -> {
+                    val url = SettingsPreferences.getAsrServiceUrl(context)
+                    if (url.isBlank()) {
+                        null
+                    } else {
+                        runCatching {
+                            val token = AsrServiceCredentialStore(context).getToken()
+                            AsrServiceAsrBackend(HttpAsrServiceClient(url, token))
+                        }.onFailure {
+                            FileLogger.e(TAG, "Invalid ASR service configuration: ${it.message}")
+                        }.getOrNull()
+                    }
+                }
+                else -> FunAsrAsrBackend(context)
+            }
         }
     }
 
@@ -287,6 +309,13 @@ class SpeechRecognitionManager(private val context: Context) {
         private val currentBackend: AsrBackend,
         private val preStarted: AudioRecord? = null
     ) : Thread("AsrRecording") {
+        @Volatile
+        private var cancelRequested = false
+
+        fun requestCancel() {
+            cancelRequested = true
+            interrupt()
+        }
 
         override fun run() {
             val audioRecord = preStarted ?: (createAudioRecord() ?: run {
@@ -346,7 +375,11 @@ class SpeechRecognitionManager(private val context: Context) {
                 audioRecord.release()
             }
 
-            currentBackend.stop()
+            if (cancelRequested) {
+                currentBackend.cancel()
+            } else {
+                currentBackend.stop()
+            }
             Log.d(TAG, "Recognition thread ended")
         }
 

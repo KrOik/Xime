@@ -60,8 +60,7 @@ class VoiceRecognitionHandler(
             val sherpaEngine = SherpaAsrEngine(context)
             sherpaEngine.getSelectedModelInfo()?.name ?: "本地模型"
         } else {
-            val apiKey = SettingsPreferences.getFunAsrApiKey(context)
-            if (apiKey.isNotEmpty()) "阿里百炼" else "未配置"
+            resolveOnlineProviderName()
         }
 
         onStateChanged(getState().copy(voicePluginName = providerName))
@@ -141,8 +140,7 @@ class VoiceRecognitionHandler(
             val sherpaEngine = SherpaAsrEngine(context)
             sherpaEngine.getSelectedModelInfo()?.name ?: "本地模型"
         } else {
-            val apiKey = SettingsPreferences.getFunAsrApiKey(context)
-            if (apiKey.isNotEmpty()) "阿里百炼" else "未配置"
+            resolveOnlineProviderName()
         }
         onStateChanged(getState().copy(voicePluginName = providerName))
 
@@ -182,6 +180,7 @@ class VoiceRecognitionHandler(
         if (cleanText.isNotEmpty() && !cleanText.startsWith("错误:")) {
             val ic = getInputConnection()
             if (ic != null) {
+                ic.finishComposingText()
                 val punctuatedText = addPunctuation(cleanText)
                 ic.commitText(punctuatedText, 1)
             }
@@ -250,6 +249,7 @@ class VoiceRecognitionHandler(
         Log.e(TAG, "Speech error: $error")
         FileLogger.e(TAG, "Speech error: $error")
         lastPartialText = ""
+        getInputConnection()?.finishComposingText()
         onVoiceComplete()
     }
 
@@ -258,5 +258,20 @@ class VoiceRecognitionHandler(
         if (now - lastAmplitudeUpdate < 80) return
         lastAmplitudeUpdate = now
         onAmplitudeChanged(amplitude)
+    }
+
+    private fun resolveOnlineProviderName(): String {
+        return when (SettingsPreferences.getSttProvider(context)) {
+            "asr_service" -> if (SettingsPreferences.getAsrServiceUrl(context).isNotBlank()) {
+                "ASR 转写服务"
+            } else {
+                "ASR 服务未配置"
+            }
+            else -> if (SettingsPreferences.getFunAsrApiKey(context).isNotEmpty()) {
+                "阿里百炼"
+            } else {
+                "未配置"
+            }
+        }
     }
 }
