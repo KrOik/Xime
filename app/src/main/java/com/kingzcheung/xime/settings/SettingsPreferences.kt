@@ -30,10 +30,20 @@ object SettingsPreferences {
     private const val KEY_DOUTYPE_PUNCTUATION = "doutype_punctuation"
     private const val KEY_DOUTYPE_TWOPASS = "doutype_twopass"
     private const val KEY_DOUTYPE_THREEPASS = "doutype_threepass"
+    private const val KEY_DOUTYPE_TWOPASS_RETRY = "doutype_twopass_retry"
+    private const val KEY_DOUTYPE_STRONG_DDC = "doutype_strong_ddc"
     private const val KEY_DOUTYPE_SPEECH_REJECTION = "doutype_speech_rejection"
     private const val KEY_DOUTYPE_SENTENCE_SEG = "doutype_sentence_seg"
+    private const val KEY_DOUTYPE_TEXT_SEG = "doutype_text_seg"
     private const val KEY_DOUTYPE_TIMESTAMP = "doutype_timestamp"
+    private const val KEY_DOUTYPE_SHOW_UTTERANCES = "doutype_show_utterances"
+    private const val KEY_DOUTYPE_PRINT_CHINESE = "doutype_print_chinese"
     private const val KEY_DOUTYPE_REMOVE_SPACES = "doutype_remove_spaces"
+    private const val KEY_DOUTYPE_REMOVE_SPACES_ENG = "doutype_remove_spaces_eng"
+    private const val KEY_DOUTYPE_DISABLE_USER_WORDS = "doutype_disable_user_words"
+    private const val KEY_DOUTYPE_LANGUAGE = "doutype_language"
+    private const val KEY_DOUTYPE_RESULT_TYPE = "doutype_result_type"
+    private const val KEY_DOUTYPE_INPUT_MODE = "doutype_input_mode"
     private const val KEY_STT_USE_LOCAL = "stt_use_local"
     private const val KEY_STT_KEEP_MODEL_IN_RAM = "stt_keep_model_in_ram"
     
@@ -332,14 +342,34 @@ object SettingsPreferences {
     fun setDouTypeTwoPassEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_TWOPASS, value).apply()
     fun isDouTypeThreePassEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_THREEPASS, true)
     fun setDouTypeThreePassEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_THREEPASS, value).apply()
+    fun isDouTypeTwoPassRetryEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_TWOPASS_RETRY, true)
+    fun setDouTypeTwoPassRetryEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_TWOPASS_RETRY, value).apply()
+    fun isDouTypeStrongDdcEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_STRONG_DDC, true)
+    fun setDouTypeStrongDdcEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_STRONG_DDC, value).apply()
     fun isDouTypeSpeechRejectionEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_SPEECH_REJECTION, false)
     fun setDouTypeSpeechRejectionEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_SPEECH_REJECTION, value).apply()
     fun isDouTypeSentenceSegEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_SENTENCE_SEG, true)
     fun setDouTypeSentenceSegEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_SENTENCE_SEG, value).apply()
+    fun isDouTypeTextSegEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_TEXT_SEG, false)
+    fun setDouTypeTextSegEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_TEXT_SEG, value).apply()
     fun isDouTypeTimestampEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_TIMESTAMP, true)
     fun setDouTypeTimestampEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_TIMESTAMP, value).apply()
+    fun isDouTypeShowUtterancesEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_SHOW_UTTERANCES, false)
+    fun setDouTypeShowUtterancesEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_SHOW_UTTERANCES, value).apply()
+    fun isDouTypePrintChineseEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_PRINT_CHINESE, false)
+    fun setDouTypePrintChineseEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_PRINT_CHINESE, value).apply()
     fun isDouTypeRemoveSpacesEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_REMOVE_SPACES, true)
     fun setDouTypeRemoveSpacesEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_REMOVE_SPACES, value).apply()
+    fun isDouTypeRemoveSpacesEngEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_REMOVE_SPACES_ENG, true)
+    fun setDouTypeRemoveSpacesEngEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_REMOVE_SPACES_ENG, value).apply()
+    fun isDouTypeDisableUserWordsEnabled(context: Context) = getPrefs(context).getBoolean(KEY_DOUTYPE_DISABLE_USER_WORDS, false)
+    fun setDouTypeDisableUserWordsEnabled(context: Context, value: Boolean) = getPrefs(context).edit().putBoolean(KEY_DOUTYPE_DISABLE_USER_WORDS, value).apply()
+    fun getDouTypeLanguage(context: Context) = getPrefs(context).getString(KEY_DOUTYPE_LANGUAGE, "zh-CN") ?: "zh-CN"
+    fun setDouTypeLanguage(context: Context, value: String) = getPrefs(context).edit().putString(KEY_DOUTYPE_LANGUAGE, value).apply()
+    fun getDouTypeResultType(context: Context) = getPrefs(context).getString(KEY_DOUTYPE_RESULT_TYPE, "full") ?: "full"
+    fun setDouTypeResultType(context: Context, value: String) = getPrefs(context).edit().putString(KEY_DOUTYPE_RESULT_TYPE, value).apply()
+    fun getDouTypeInputMode(context: Context) = getPrefs(context).getString(KEY_DOUTYPE_INPUT_MODE, "tool") ?: "tool"
+    fun setDouTypeInputMode(context: Context, value: String) = getPrefs(context).edit().putString(KEY_DOUTYPE_INPUT_MODE, value).apply()
     
     fun isSttUseLocal(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_STT_USE_LOCAL, false)
