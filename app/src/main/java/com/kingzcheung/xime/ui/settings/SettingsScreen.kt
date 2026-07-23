@@ -123,6 +123,7 @@ fun SettingsScreen(
             SpeechToTextSettingsContent(
                 onBack = { navController.popBackStack() },
                 onNavigateToFunAsrSettings = { navController.navigate(SettingsRoutes.FunAsrSettings) },
+                onNavigateToDouTypeSettings = { navController.navigate(SettingsRoutes.DouTypeSettings) },
                 onNavigateToModelManagement = { navController.navigate(SettingsRoutes.ModelManagement) }
             )
         }
@@ -130,6 +131,9 @@ fun SettingsScreen(
             FunAsrSettingsContent(
                 onBack = { navController.popBackStack() }
             )
+        }
+        composable(SettingsRoutes.DouTypeSettings) {
+            DouTypeSettingsContent(onBack = { navController.popBackStack() })
         }
         composable(SettingsRoutes.Dictionary) {
             DictionarySettingsContent(

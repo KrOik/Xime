@@ -82,10 +82,12 @@ data class AsrProvider(
 fun SpeechToTextSettingsContent(
     onBack: () -> Unit,
     onNavigateToFunAsrSettings: () -> Unit,
+    onNavigateToDouTypeSettings: () -> Unit,
     onNavigateToModelManagement: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var useLocal by remember { mutableStateOf(SettingsPreferences.isSttUseLocal(context)) }
+    var selectedOnlineProvider by remember { mutableStateOf(SettingsPreferences.getSttProvider(context)) }
 
     val onlineProviders = remember {
         mutableStateListOf(
@@ -97,6 +99,15 @@ fun SpeechToTextSettingsContent(
                 isOnline = true,
                 isConfigured = SettingsPreferences.getFunAsrApiKey(context).isNotEmpty(),
                 features = listOf("实时流式", "高准确率", "多格式支持")
+            ),
+            AsrProvider(
+                id = "doutype",
+                name = "DouType 在线 API",
+                description = "豆包输入法在线语音识别",
+                icon = Icons.Default.CloudDownload,
+                isOnline = true,
+                isConfigured = SettingsPreferences.getDouTypeApiKey(context).isNotEmpty(),
+                features = listOf("实时流式", "自动标点", "多阶段纠错")
             )
         )
     }
@@ -145,10 +156,13 @@ fun SpeechToTextSettingsContent(
             } else {
                 OnlineAsrTab(
                     providers = onlineProviders,
+                    selectedProvider = selectedOnlineProvider,
+                    onProviderSelect = { provider -> selectedOnlineProvider = provider.id; SettingsPreferences.setSttProvider(context, provider.id); SettingsPreferences.setSttUseLocal(context, false); useLocal = false },
                     onProviderClick = { provider ->
                         if (provider.id == "funasr") {
                             onNavigateToFunAsrSettings()
                         }
+                        if (provider.id == "doutype") onNavigateToDouTypeSettings()
                     }
                 )
             }
@@ -184,7 +198,7 @@ fun EngineSelectorComposable(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = if (useLocal) "离线运行，无需网络" else "使用阿里百炼在线 API",
+                    text = if (useLocal) "离线运行，无需网络" else "使用已选择的在线 API",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)
                 )
@@ -204,6 +218,8 @@ fun EngineSelectorComposable(
 @Composable
 fun OnlineAsrTab(
     providers: List<AsrProvider>,
+    selectedProvider: String,
+    onProviderSelect: (AsrProvider) -> Unit,
     onProviderClick: (AsrProvider) -> Unit
 ) {
     LazyColumn(
@@ -223,6 +239,8 @@ fun OnlineAsrTab(
         items(providers) { provider ->
             AsrProviderCardModern(
                 provider = provider,
+                isSelected = provider.id == selectedProvider,
+                onSelect = { onProviderSelect(provider) },
                 onClick = { onProviderClick(provider) }
             )
         }
@@ -787,6 +805,8 @@ fun PunctuationModelSection(
 @Composable
 fun AsrProviderCardModern(
     provider: AsrProvider,
+    isSelected: Boolean = false,
+    onSelect: () -> Unit = {},
     onClick: () -> Unit,
     enabled: Boolean = true
 ) {
@@ -867,6 +887,8 @@ fun AsrProviderCardModern(
                 }
 
                 if (enabled) {
+                    Switch(checked = isSelected, onCheckedChange = { if (it) onSelect() })
+                    Spacer(modifier = Modifier.width(8.dp))
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (provider.isConfigured)
@@ -887,7 +909,7 @@ fun AsrProviderCardModern(
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
-                                    text = "已配置",
+                                    text = if (isSelected) "使用中" else "已配置",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimary,
                                     fontWeight = FontWeight.Medium

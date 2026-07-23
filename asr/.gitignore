@@ -1,0 +1,28 @@
+# Byte-compile / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Credentials / keystore / local state
+*.json.bak
+credentials.json
+keystore.json
+**/doutype/credentials.json
+**/doutype/keystore.json
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Large local artifacts (already archived if present)
+*.apk
+*.so
+*.xz

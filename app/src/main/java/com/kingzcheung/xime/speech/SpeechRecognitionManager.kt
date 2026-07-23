@@ -13,6 +13,7 @@ import androidx.annotation.RequiresPermission
 import com.kingzcheung.xime.model.ModelRuntime
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.speech.funasr.FunAsrAsrBackend
+import com.kingzcheung.xime.speech.doutype.DouTypeAsrBackend
 import com.kingzcheung.xime.speech.sherpa.SherpaAsrBackend
 import com.kingzcheung.xime.util.FileLogger
 
@@ -64,7 +65,8 @@ class SpeechRecognitionManager(private val context: Context) {
 
         if (backend == null) {
             val useLocal = SettingsPreferences.isSttUseLocal(context)
-            FileLogger.i(TAG, "Creating ASR backend: ${if (useLocal) "Sherpa (local)" else "FunAsr (online)"}")
+            val onlineProvider = SettingsPreferences.getSttProvider(context)
+            FileLogger.i(TAG, "Creating ASR backend: ${if (useLocal) "Sherpa (local)" else "$onlineProvider (online)"}")
             
             val newBackend = createBackend()
             if (newBackend == null) {
@@ -86,6 +88,7 @@ class SpeechRecognitionManager(private val context: Context) {
                 val msg = when {
                     newBackend is SherpaAsrBackend -> "本地模型未下载或引擎未编译"
                     newBackend is FunAsrAsrBackend -> "初始化在线引擎失败，请检查 API Key"
+                    newBackend is DouTypeAsrBackend -> "初始化 DouType 失败，请检查 API Key"
                     else -> "引擎初始化失败"
                 }
                 FileLogger.e(TAG, "Backend initialization failed: $msg")
@@ -257,7 +260,7 @@ class SpeechRecognitionManager(private val context: Context) {
         return if (SettingsPreferences.isSttUseLocal(context)) {
             SherpaAsrBackend(context)
         } else {
-            FunAsrAsrBackend(context)
+            if (SettingsPreferences.getSttProvider(context) == "doutype") DouTypeAsrBackend(context) else FunAsrAsrBackend(context)
         }
     }
 

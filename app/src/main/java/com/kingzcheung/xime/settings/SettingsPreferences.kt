@@ -26,6 +26,7 @@ object SettingsPreferences {
     private const val KEY_STT_ENABLED = "stt_enabled"
     private const val KEY_STT_PROVIDER = "stt_provider"
     private const val KEY_FUNASR_API_KEY = "funasr_api_key"
+    private const val KEY_DOUTYPE_API_KEY = "doutype_api_key"
     private const val KEY_STT_USE_LOCAL = "stt_use_local"
     private const val KEY_STT_KEEP_MODEL_IN_RAM = "stt_keep_model_in_ram"
     
@@ -314,6 +315,13 @@ object SettingsPreferences {
     
     fun setFunAsrApiKey(context: Context, apiKey: String) {
         getPrefs(context).edit().putString(KEY_FUNASR_API_KEY, apiKey).apply()
+    }
+
+    fun getDouTypeApiKey(context: Context): String =
+        getPrefs(context).getString(KEY_DOUTYPE_API_KEY, "") ?: ""
+
+    fun setDouTypeApiKey(context: Context, apiKey: String) {
+        getPrefs(context).edit().putString(KEY_DOUTYPE_API_KEY, apiKey).apply()
     }
     
     fun isSttUseLocal(context: Context): Boolean {
