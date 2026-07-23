@@ -17,6 +17,7 @@
 - PR 必须遵循最小修改原则
 - 贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)
 - 禁止使用 `./gradlew clean`
+- 禁止在本地运行 Gradle 构建、测试、原生编译等重任务；优先使用 GitHub Actions 构建和验证
 - 必须使用中文回复
 - 修改功能时，需要审查是否影响到其他功能。
 
