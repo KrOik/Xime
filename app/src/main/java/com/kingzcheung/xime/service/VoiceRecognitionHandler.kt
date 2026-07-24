@@ -64,7 +64,10 @@ class VoiceRecognitionHandler(
         }
 
         onStateChanged(getState().copy(voicePluginName = providerName))
-        FileLogger.i(TAG, "STT provider: ${if (useLocal) "local" else "funasr"}")
+        FileLogger.i(
+            TAG,
+            "STT provider: ${if (useLocal) "local" else SettingsPreferences.getSttProvider(context)}"
+        )
 
         if (useLocal && SettingsPreferences.isSttEnabled(context)) {
             Thread {
@@ -262,8 +265,13 @@ class VoiceRecognitionHandler(
 
     private fun resolveOnlineProviderName(): String {
         return when (SettingsPreferences.getSttProvider(context)) {
+            "doutype" -> if (SettingsPreferences.isDouTypeEnabled(context)) {
+                "DouType 在线"
+            } else {
+                "DouType 未启用"
+            }
             "asr_service" -> if (SettingsPreferences.getAsrServiceUrl(context).isNotBlank()) {
-                "ASR 转写服务"
+                "自建 ASR 服务"
             } else {
                 "ASR 服务未配置"
             }

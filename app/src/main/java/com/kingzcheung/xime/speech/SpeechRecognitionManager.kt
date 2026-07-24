@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.kingzcheung.xime.model.ModelRuntime
 import com.kingzcheung.xime.settings.SettingsPreferences
+import com.kingzcheung.xime.speech.doutype.DouTypeAsrBackend
 import com.kingzcheung.xime.speech.funasr.FunAsrAsrBackend
 import com.kingzcheung.xime.speech.service.AsrServiceAsrBackend
 import com.kingzcheung.xime.speech.service.AsrServiceCredentialStore
@@ -101,6 +102,7 @@ class SpeechRecognitionManager(private val context: Context) {
                 val msg = when {
                     newBackend is SherpaAsrBackend -> "本地模型未下载或引擎未编译"
                     newBackend is FunAsrAsrBackend -> "初始化在线引擎失败，请检查 API Key"
+                    newBackend is DouTypeAsrBackend -> "初始化 DouType 失败，请检查网络或重试注册"
                     newBackend is AsrServiceAsrBackend -> "初始化 ASR 服务失败，请检查服务地址"
                     else -> "引擎初始化失败"
                 }
@@ -288,6 +290,7 @@ class SpeechRecognitionManager(private val context: Context) {
             SherpaAsrBackend(context)
         } else {
             when (SettingsPreferences.getSttProvider(context)) {
+                "doutype" -> DouTypeAsrBackend(context)
                 "asr_service" -> {
                     val url = SettingsPreferences.getAsrServiceUrl(context)
                     if (url.isBlank()) {
@@ -309,6 +312,7 @@ class SpeechRecognitionManager(private val context: Context) {
     private fun currentBackendConfigKey(): String {
         if (SettingsPreferences.isSttUseLocal(context)) return "local"
         return when (val provider = SettingsPreferences.getSttProvider(context)) {
+            "doutype" -> "online:doutype:${SettingsPreferences.isDouTypeEnabled(context)}"
             "asr_service" -> {
                 val url = SettingsPreferences.getAsrServiceUrl(context)
                 val tokenHash = AsrServiceCredentialStore(context).getToken().hashCode()

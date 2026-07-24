@@ -84,6 +84,7 @@ fun SpeechToTextSettingsContent(
     onBack: () -> Unit,
     onNavigateToFunAsrSettings: () -> Unit,
     onNavigateToAsrServiceSettings: () -> Unit,
+    onNavigateToDouTypeSettings: () -> Unit = {},
     onNavigateToModelManagement: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -105,10 +106,20 @@ fun SpeechToTextSettingsContent(
                 isSelected = selectedProviderId == "funasr"
             ),
             AsrProvider(
+                id = "doutype",
+                name = "DouType 在线 API",
+                description = "豆包输入法上游协议，应用内自动注册设备并获取凭据",
+                icon = Icons.Default.CloudQueue,
+                isOnline = true,
+                isConfigured = SettingsPreferences.isDouTypeEnabled(context),
+                features = listOf("私有协议", "自动注册", "流式转写", "多遍纠错"),
+                isSelected = selectedProviderId == "doutype"
+            ),
+            AsrProvider(
                 id = "asr_service",
                 name = "自建 ASR 服务",
-                description = "通过标准 HTTPS 实时转写 API 接入",
-                icon = Icons.Default.CloudQueue,
+                description = "对接 HTTPS 实时转写服务（可自建 doutype 网关）",
+                icon = Icons.Default.Storage,
                 isOnline = true,
                 isConfigured = SettingsPreferences.getAsrServiceUrl(context).isNotBlank(),
                 features = listOf("私有部署", "Bearer 鉴权", "流式转写"),
@@ -163,8 +174,13 @@ fun SpeechToTextSettingsContent(
                     onProviderClick = { provider ->
                         selectedProviderId = provider.id
                         SettingsPreferences.setSttProvider(context, provider.id)
+                        SettingsPreferences.setSttUseLocal(context, false)
                         when (provider.id) {
                             "funasr" -> onNavigateToFunAsrSettings()
+                            "doutype" -> {
+                                SettingsPreferences.setDouTypeEnabled(context, true)
+                                onNavigateToDouTypeSettings()
+                            }
                             "asr_service" -> onNavigateToAsrServiceSettings()
                         }
                     }

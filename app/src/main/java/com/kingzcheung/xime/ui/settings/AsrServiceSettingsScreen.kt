@@ -195,6 +195,7 @@ fun AsrServiceSettingsContent(
                                     val url = normalizedUrl() ?: return@Button
                                     SettingsPreferences.setAsrServiceUrl(context, url)
                                     credentialStore.setToken(token)
+                                    SettingsPreferences.setSttUseLocal(context, false)
                                     SettingsPreferences.setSttProvider(context, "asr_service")
                                     serviceUrl = url
                                     token = token.trim()

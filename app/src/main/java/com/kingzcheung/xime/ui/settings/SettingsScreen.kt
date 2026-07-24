@@ -124,6 +124,7 @@ fun SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onNavigateToFunAsrSettings = { navController.navigate(SettingsRoutes.FunAsrSettings) },
                 onNavigateToAsrServiceSettings = { navController.navigate(SettingsRoutes.AsrServiceSettings) },
+                onNavigateToDouTypeSettings = { navController.navigate(SettingsRoutes.DouTypeSettings) },
                 onNavigateToModelManagement = { navController.navigate(SettingsRoutes.ModelManagement) }
             )
         }
@@ -134,6 +135,11 @@ fun SettingsScreen(
         }
         composable(SettingsRoutes.AsrServiceSettings) {
             AsrServiceSettingsContent(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(SettingsRoutes.DouTypeSettings) {
+            DouTypeSettingsContent(
                 onBack = { navController.popBackStack() }
             )
         }

@@ -165,10 +165,11 @@ fun FunAsrSettingsContent(
                                     ).show()
                                 } else {
                                     SettingsPreferences.setFunAsrApiKey(context, apiKey)
+                                    SettingsPreferences.setSttUseLocal(context, false)
                                     SettingsPreferences.setSttProvider(context, "funasr")
                                     Toast.makeText(
                                         context,
-                                        "API Key 已保存",
+                                        "API Key 已保存并启用",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
