@@ -183,7 +183,9 @@ class VoiceRecognitionHandler(
         if (cleanText.isNotEmpty() && !cleanText.startsWith("错误:")) {
             val ic = getInputConnection()
             if (ic != null) {
-                ic.finishComposingText()
+                // 直接 commitText 会替换当前的 composing text，无需先 finishComposingText。
+                // 否则 finishComposingText 将 composing 转为普通文本后，
+                // commitText 会在其末尾再次插入，导致内容重复。
                 val punctuatedText = addPunctuation(cleanText)
                 ic.commitText(punctuatedText, 1)
             }
