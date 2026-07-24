@@ -28,7 +28,6 @@ class SpeechRecognitionManager(private val context: Context) {
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val BUFFER_SIZE_SECONDS = 0.1f
-        private const val SPEECH_THRESHOLD = 100
     }
 
     private var backend: AsrBackend? = null
@@ -384,54 +383,78 @@ class SpeechRecognitionManager(private val context: Context) {
 
             val buffer = ShortArray((SAMPLE_RATE * BUFFER_SIZE_SECONDS).toInt())
             val byteBuffer = ByteArray(buffer.size * 2)
-            var speechDetected = false
-
+            var activeRecord = audioRecord
+            // 在线流式 ASR 必须持续上行；本地引擎也接受静音帧。
+            // 旧逻辑等“检测到语音”才发送，会导致 Session 空闲被服务端结束，
+            // 表现为按住未松手就退出语音模式。
             try {
-                while (!interrupted()) {
-                    val nread = audioRecord.read(buffer, 0, buffer.size)
+                while (!interrupted() && !cancelRequested) {
+                    val nread = activeRecord.read(buffer, 0, buffer.size)
                     if (nread > 0) {
                         for (i in 0 until nread) {
                             val s = buffer[i].toInt()
                             byteBuffer[i * 2] = (s and 0xFF).toByte()
                             byteBuffer[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
                         }
-                        val chunk = byteBuffer.copyOf(nread * 2)
-                        if (!speechDetected) {
-                            if (isSpeech(chunk)) {
-                                speechDetected = true
-                                currentBackend.processAudioChunk(chunk)
-                            }
-                        } else {
-                            currentBackend.processAudioChunk(chunk)
+                        currentBackend.processAudioChunk(byteBuffer.copyOf(nread * 2))
+                        // 音量回调仍基于峰值，不影响上行
+                        var peak = 0
+                        for (i in 0 until nread) {
+                            val abs = kotlin.math.abs(buffer[i].toInt())
+                            if (abs > peak) peak = abs
                         }
+                        val amplitude = (peak / 32768f).coerceIn(0f, 1f)
+                        mainHandler.post { amplitudeCallback?.invoke(amplitude) }
                     } else if (nread < 0) {
-                        break
+                        FileLogger.w(TAG, "AudioRecord read error=$nread, recreating recorder")
+                        try {
+                            activeRecord.stop()
+                        } catch (_: Exception) {
+                        }
+                        try {
+                            activeRecord.release()
+                        } catch (_: Exception) {
+                        }
+                        val recreated = createAudioRecord()
+                        if (recreated == null) {
+                            currentBackend.cancel()
+                            mainHandler.post {
+                                errorCallback?.invoke("录音中断，请重试")
+                                stateCallback?.invoke(RecognitionState.ERROR)
+                            }
+                            return
+                        }
+                        activeRecord = recreated
+                        activeRecord.startRecording()
                     }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "Recording loop error: ${e.message}")
             } finally {
-                audioRecord.stop()
-                audioRecord.release()
+                try {
+                    activeRecord.stop()
+                } catch (_: Exception) {
+                }
+                try {
+                    activeRecord.release()
+                } catch (_: Exception) {
+                }
             }
 
+            // 仅用户松手(stopRecognition→interrupt)或取消时收尾；
+            // 不要把录音设备瞬时错误当成用户结束。
             if (cancelRequested) {
                 currentBackend.cancel()
-            } else {
+            } else if (interrupted() || recordingThread == null) {
                 currentBackend.stop()
+            } else {
+                FileLogger.w(TAG, "Recording ended unexpectedly without stop/cancel")
+                mainHandler.post {
+                    errorCallback?.invoke("录音异常结束")
+                    stateCallback?.invoke(RecognitionState.ERROR)
+                }
             }
             Log.d(TAG, "Recognition thread ended")
-        }
-
-        private fun isSpeech(chunk: ByteArray): Boolean {
-            var peak = 0
-            for (i in 0 until chunk.size / 2) {
-                val low = chunk[i * 2].toInt() and 0xFF
-                val high = chunk[i * 2 + 1].toInt()
-                val sample = ((high shl 8) or low).toShort().toInt()
-                val abs = kotlin.math.abs(sample)
-                if (abs > peak) peak = abs
-            }
-            return peak > SPEECH_THRESHOLD
         }
     }
 

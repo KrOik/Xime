@@ -45,6 +45,8 @@ class DouTypeWebSocketManager(
         private const val STABLE_MS = 800L
         /** 末帧前追加静音，便于服务端 VAD 收口（约 200ms）。 */
         private const val TRAIL_SILENCE_FRAMES = 10
+        /** 按住期间会话被服务端掐断时的自动重连次数。 */
+        private const val MAX_LIVE_RECONNECT = 2
     }
 
     var state = RecognitionState.IDLE
@@ -69,6 +71,7 @@ class DouTypeWebSocketManager(
     private var sessionFinishedSeen = false
     private var lastImproveAtMs = 0L
     private var sentAnyAudio = false
+    private var liveReconnectCount = 0
     private val pendingAudio = ArrayList<ByteArray>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val finishTimeoutRunnable = Runnable {
@@ -128,9 +131,14 @@ class DouTypeWebSocketManager(
         sessionFinishedSeen = false
         lastImproveAtMs = 0L
         sentAnyAudio = false
+        liveReconnectCount = 0
         pendingAudio.clear()
+        return openSocket()
+    }
+
+    private fun openSocket(): Boolean {
         return try {
-            credentials = DouTypeCredentialManager(context).ensure()
+            credentials = credentials ?: DouTypeCredentialManager(context).ensure()
             val c = credentials!!
             val req = Request.Builder()
                 .url("$WS_URL?aid=$AID&device_id=${c.deviceId}")
@@ -145,7 +153,7 @@ class DouTypeWebSocketManager(
                 .header("x-tt-e-b", "1")
                 .header("x-custom-keepalive", "true")
                 .build()
-            FileLogger.i(TAG, "Connecting DouType WS device=${c.deviceId}")
+            FileLogger.i(TAG, "Connecting DouType WS device=${c.deviceId} task=$taskId")
             socket = http.newWebSocket(req, Listener())
             true
         } catch (e: Exception) {
@@ -153,6 +161,44 @@ class DouTypeWebSocketManager(
             fail("DouType 自动注册失败: ${e.message ?: "网络不可用"}")
             false
         }
+    }
+
+    /**
+     * 按住说话期间服务端掐断会话时重连，不触发 onFinal/onError，避免 UI 退回键盘。
+     * 保留 lastText/bestRank 作为已识别文本。
+     */
+    private fun tryReconnectWhileListening(reason: String): Boolean {
+        if (finishing.get() || finalized.get() || closed.get()) return false
+        if (liveReconnectCount >= MAX_LIVE_RECONNECT) return false
+        liveReconnectCount++
+        FileLogger.w(
+            TAG,
+            "live reconnect #$liveReconnectCount reason=$reason keepText='${lastText.take(40)}'"
+        )
+        cancelFinishTimers()
+        sessionReady.set(false)
+        finishFramesSent.set(false)
+        firstFrame = true
+        frameIndex = 0
+        audioT0Ms = System.currentTimeMillis()
+        taskId = UUID.randomUUID().toString()
+        sessionId = ""
+        gotOffline = false
+        gotStreamFinish = false
+        sessionFinishedSeen = false
+        sentAnyAudio = false
+        synchronized(pendingAudio) { pendingAudio.clear() }
+        // 先清空 socket 引用，再 cancel 旧连接，避免旧 Listener 回调再次进入重连/失败
+        val old = socket
+        socket = null
+        try {
+            old?.cancel()
+        } catch (_: Exception) {
+        }
+        state = RecognitionState.PROCESSING
+        onState(state)
+        // 文本不清空：用户已看到的 partial 继续保留
+        return openSocket()
     }
 
     fun sendAudio(data: ByteArray) {
@@ -323,34 +369,45 @@ class DouTypeWebSocketManager(
     }
 
     private inner class Listener : WebSocketListener() {
+        private fun isCurrent(webSocket: WebSocket): Boolean = socket === webSocket
+
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (!isCurrent(webSocket)) return
             FileLogger.i(TAG, "WS open code=${response.code}")
             // StartTask 携带完整 session payload（与引擎非 compact 路径一致）
             webSocket.send(ByteString.of(*control("StartTask", payload())))
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (!isCurrent(webSocket) || closed.get() || finalized.get()) return
             parse(bytes.toByteArray())
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!isCurrent(webSocket)) return
             FileLogger.e(TAG, "WS failure: ${t.message}")
-            if (closed.get()) return
+            if (closed.get() || finalized.get()) return
             if (finishing.get()) {
                 completeWithFinal()
+            } else if (tryReconnectWhileListening("onFailure:${t.message}")) {
+                // keep listening after reconnect
             } else {
                 fail("DouType 连接失败: ${t.message ?: "未知错误"}")
             }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!isCurrent(webSocket)) return
             FileLogger.i(TAG, "WS closed code=$code reason=$reason")
-            if (closed.get()) return
-            if (finishing.get() || lastText.isNotBlank()) {
+            if (closed.get() || finalized.get()) return
+            if (finishing.get()) {
+                completeWithFinal()
+            } else if (tryReconnectWhileListening("onClosed:$code")) {
+                // keep listening after reconnect
+            } else if (lastText.isNotBlank()) {
                 completeWithFinal()
             } else {
-                state = RecognitionState.IDLE
-                onState(state)
+                fail("DouType 连接已关闭")
             }
         }
     }
@@ -543,8 +600,11 @@ class DouTypeWebSocketManager(
                     }
                     beginOfflineGrace()
                 } else {
-                    // 录音中被服务端结束：立刻收尾，避免“按住却自动退出前长时间无字”
-                    FileLogger.w(TAG, "SessionFinished while listening, complete immediately")
+                    // 按住期间服务端掐断：重连续录，绝不能 onFinal 退回键盘
+                    if (tryReconnectWhileListening(event)) {
+                        return
+                    }
+                    FileLogger.w(TAG, "SessionFinished while listening, reconnect exhausted")
                     completeWithFinal()
                     return
                 }
