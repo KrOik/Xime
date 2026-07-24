@@ -51,7 +51,7 @@ class DouTypeWebSocketManager(
         private set
 
     private var socket: WebSocket? = null
-    private val taskId = UUID.randomUUID().toString()
+    private var taskId = UUID.randomUUID().toString()
     private var sessionId = ""
     private var firstFrame = true
     private var frameIndex = 0
@@ -68,6 +68,7 @@ class DouTypeWebSocketManager(
     private var gotStreamFinish = false
     private var sessionFinishedSeen = false
     private var lastImproveAtMs = 0L
+    private var sentAnyAudio = false
     private val pendingAudio = ArrayList<ByteArray>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val finishTimeoutRunnable = Runnable {
@@ -82,7 +83,9 @@ class DouTypeWebSocketManager(
         override fun run() {
             if (closed.get() || finalized.get() || !finishing.get() || !sessionFinishedSeen) return
             val stableLongEnough = System.currentTimeMillis() - lastImproveAtMs >= STABLE_MS
-            if (stableLongEnough && (gotOffline || gotStreamFinish)) {
+            // 有文本时：offline 或 stream_finish 稳定后收尾；
+            // 无文本时：宽限到期由 offlineGraceRunnable 收尾，避免空转卡死。
+            if (stableLongEnough && lastText.isNotBlank() && (gotOffline || gotStreamFinish)) {
                 FileLogger.i(
                     TAG,
                     "multipass stable offline=$gotOffline streamFinish=$gotStreamFinish text='${lastText.take(40)}'"
@@ -115,6 +118,8 @@ class DouTypeWebSocketManager(
         firstFrame = true
         frameIndex = 0
         audioT0Ms = System.currentTimeMillis()
+        // 每次连接换新 taskId，避免复用导致服务端拒帧/空结果
+        taskId = UUID.randomUUID().toString()
         sessionId = ""
         lastText = ""
         bestRank = 0
@@ -122,6 +127,7 @@ class DouTypeWebSocketManager(
         gotStreamFinish = false
         sessionFinishedSeen = false
         lastImproveAtMs = 0L
+        sentAnyAudio = false
         pendingAudio.clear()
         return try {
             credentials = DouTypeCredentialManager(context).ensure()
@@ -202,15 +208,20 @@ class DouTypeWebSocketManager(
 
     private fun sendFinishFrames() {
         if (!finishFramesSent.compareAndSet(false, true)) return
-        // 末段静音 + finish_audio 末帧，触发服务端 VAD 收口与 twopass
-        repeat(TRAIL_SILENCE_FRAMES) {
-            socket?.send(
-                ByteString.of(
-                    *audioEnvelope(ByteArray(FRAME_BYTES), frameState = 3, last = false)
-                )
-            )
+        // 对齐 Python send_end_frame：仅在已有上行音频时补短静音，且用 dispatchFrame
+        // 保证 frame_state 1/3 正确；从未发过音频时不要硬塞 frame_state=3 静音帧。
+        if (sentAnyAudio) {
+            repeat(TRAIL_SILENCE_FRAMES) {
+                dispatchFrame(ByteArray(FRAME_BYTES))
+            }
         }
-        socket?.send(ByteString.of(*audioEnvelope(ByteArray(FRAME_BYTES), frameState = 9, last = true)))
+        val lastState = if (firstFrame) 1 else 9
+        firstFrame = false
+        socket?.send(
+            ByteString.of(
+                *audioEnvelope(ByteArray(FRAME_BYTES), frameState = lastState, last = true)
+            )
+        )
         socket?.send(ByteString.of(*control("FinishSession", "")))
     }
 
@@ -231,6 +242,7 @@ class DouTypeWebSocketManager(
     private fun dispatchFrame(frame: ByteArray) {
         val frameState = if (firstFrame) 1 else 3
         firstFrame = false
+        sentAnyAudio = true
         socket?.send(ByteString.of(*audioEnvelope(frame, frameState = frameState, last = false)))
     }
 
@@ -278,19 +290,20 @@ class DouTypeWebSocketManager(
     private fun beginOfflineGrace() {
         if (finalized.get() || closed.get()) return
         sessionFinishedSeen = true
+        // 无文本时缩短宽限，避免“识别优化中”空转
+        val grace = if (lastText.isBlank()) 1_200L else OFFLINE_GRACE_MS
         lastImproveAtMs = System.currentTimeMillis()
         mainHandler.removeCallbacks(offlineGraceRunnable)
-        mainHandler.postDelayed(offlineGraceRunnable, OFFLINE_GRACE_MS)
+        mainHandler.postDelayed(offlineGraceRunnable, grace)
         mainHandler.removeCallbacks(stableCheckRunnable)
         mainHandler.postDelayed(stableCheckRunnable, STABLE_MS)
-        // 已有 offline 且文本已稳定时尽快收尾
         maybeCompleteAfterStable()
     }
 
     private fun maybeCompleteAfterStable() {
         if (!finishing.get() || !sessionFinishedSeen || finalized.get() || closed.get()) return
         val stableLongEnough = System.currentTimeMillis() - lastImproveAtMs >= STABLE_MS
-        if (stableLongEnough && (gotOffline || gotStreamFinish)) {
+        if (stableLongEnough && lastText.isNotBlank() && (gotOffline || gotStreamFinish)) {
             completeWithFinal()
         }
     }
@@ -521,15 +534,19 @@ class DouTypeWebSocketManager(
                 return
             }
             "SessionFinished", "TaskFinished" -> {
-                // 对齐 Python finish()：SessionFinished 后仍给 offline/nonstream 宽限期
+                // 对齐 Python finish()：用户松手后给 offline/nonstream 宽限
                 if (finishing.get()) {
+                    if (lastText.isBlank() && !gotOffline) {
+                        // 无任何候选时不必空等 multipass
+                        completeWithFinal()
+                        return
+                    }
                     beginOfflineGrace()
                 } else {
-                    // 服务端主动结束（罕见）：仍尽量等 multipass
-                    finishing.set(true)
-                    state = RecognitionState.PROCESSING
-                    onState(state)
-                    beginOfflineGrace()
+                    // 录音中被服务端结束：立刻收尾，避免“按住却自动退出前长时间无字”
+                    FileLogger.w(TAG, "SessionFinished while listening, complete immediately")
+                    completeWithFinal()
+                    return
                 }
                 // 不 return：同包可能还带 payload 结果
             }

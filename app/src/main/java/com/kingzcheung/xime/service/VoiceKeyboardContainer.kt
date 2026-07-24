@@ -215,11 +215,17 @@ class VoiceKeyboardContainer(
             }
 
             if (isRecording()) {
+                // 只停录音，进入「识别优化中」；等 onVoiceComplete 再退出语音模式。
+                // 松手立刻 dismiss 会清掉 composing/UI，multipass 结果来不及上屏。
                 onStopRecognition()
                 setRecording(false)
-            }
-
-            if (state.isVoiceMode) {
+                onUiStateChanged(
+                    uiStateProvider().copy(
+                        voiceButtonState = VoiceButtonState(bottomActive = false)
+                    )
+                )
+            } else if (state.isVoiceMode) {
+                // 已不在录音（例如结果已回或异常收尾）才允许直接退出
                 onVoiceDismiss()
             }
         }

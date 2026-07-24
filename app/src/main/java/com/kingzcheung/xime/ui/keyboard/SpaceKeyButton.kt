@@ -96,13 +96,14 @@ fun SpaceKeyButton(
                         waitForUpOrCancellation()
                     } finally {
                         longPressJob.cancel()
-                        
-                        if (longPressTriggered) {
-                            onVoiceModeChange?.invoke(false)
-                        } else {
+
+                        // 长按进入语音后松手不再立刻 exit：
+                        // 由 VoiceKeyboardContainer 停止录音，等 ASR final / 识别优化完成后再退出。
+                        // 否则 multipass 还没回来 UI 已关掉，表现为“没出字就退出”。
+                        if (!longPressTriggered) {
                             onClick()
                         }
-                        
+
                         isPressed = false
                     }
                 }
