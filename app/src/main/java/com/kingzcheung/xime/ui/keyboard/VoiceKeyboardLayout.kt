@@ -97,7 +97,9 @@ fun VoiceKeyboardLayout(
             val statusText = when (recognitionState) {
                 RecognitionState.IDLE -> "长按空格开始说话"
                 RecognitionState.LISTENING -> "正在聆听..."
-                RecognitionState.PROCESSING -> "正在识别..."
+                // 松手后有候选文本时进入 multipass 校正（豆包文案「识别优化中」）
+                RecognitionState.PROCESSING ->
+                    if (recognizedText.isNotEmpty()) "识别优化中..." else "正在识别..."
                 RecognitionState.ERROR -> "识别出错"
             }
             

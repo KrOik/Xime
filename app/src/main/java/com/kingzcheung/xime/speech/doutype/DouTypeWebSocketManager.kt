@@ -1,6 +1,8 @@
 package com.kingzcheung.xime.speech.doutype
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.kingzcheung.xime.settings.SettingsPreferences
 import com.kingzcheung.xime.speech.RecognitionState
@@ -19,8 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * DouType / 豆包输入法在线 ASR WebSocket 客户端。
  *
- * 中间结果走 [onPartial]，仅在用户结束录音或会话真正收尾时走 [onFinal]。
- * 这样上层 [VoiceRecognitionHandler] 不会在首个 interim 文本时就退出语音模式。
+ * 中间结果走 [onPartial]，仅在用户结束录音且 multipass/offline 校正收敛后走 [onFinal]。
+ * 松手后会进入「识别优化中」等待 twopass/threepass，而不是用首个 stream_asr_finish 提前收尾。
  */
 class DouTypeWebSocketManager(
     private val context: Context,
@@ -34,6 +36,15 @@ class DouTypeWebSocketManager(
         private const val WS_URL = "wss://frontier-audio-ime-ws.doubao.com/ocean/api/v1/ws"
         private const val AID = "401734"
         private const val FRAME_BYTES = 640
+        private const val FRAME_MS = 20
+        /** 松手后最长等待 SessionFinished + multipass 的总时长（对齐 Python finish wait_s）。 */
+        private const val FINISH_WAIT_MS = 12_000L
+        /** SessionFinished 后继续等待 offline/nonstream 校正的宽限期。 */
+        private const val OFFLINE_GRACE_MS = 4_000L
+        /** 文本在宽限期内稳定多久即可提前收尾。 */
+        private const val STABLE_MS = 800L
+        /** 末帧前追加静音，便于服务端 VAD 收口（约 200ms）。 */
+        private const val TRAIL_SILENCE_FRAMES = 10
     }
 
     var state = RecognitionState.IDLE
@@ -48,10 +59,40 @@ class DouTypeWebSocketManager(
     private var credentials: DouTypeCredentials? = null
     private val sessionReady = AtomicBoolean(false)
     private val finishing = AtomicBoolean(false)
+    private val finishFramesSent = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val finalized = AtomicBoolean(false)
     private var lastText = ""
+    private var bestRank = 0
+    private var gotOffline = false
+    private var gotStreamFinish = false
+    private var sessionFinishedSeen = false
+    private var lastImproveAtMs = 0L
     private val pendingAudio = ArrayList<ByteArray>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val finishTimeoutRunnable = Runnable {
+        FileLogger.w(TAG, "finish wait timeout, complete with best='${lastText.take(40)}'")
+        completeWithFinal()
+    }
+    private val offlineGraceRunnable = Runnable {
+        FileLogger.i(TAG, "offline grace elapsed, complete with best='${lastText.take(40)}'")
+        completeWithFinal()
+    }
+    private val stableCheckRunnable = object : Runnable {
+        override fun run() {
+            if (closed.get() || finalized.get() || !finishing.get() || !sessionFinishedSeen) return
+            val stableLongEnough = System.currentTimeMillis() - lastImproveAtMs >= STABLE_MS
+            if (stableLongEnough && (gotOffline || gotStreamFinish)) {
+                FileLogger.i(
+                    TAG,
+                    "multipass stable offline=$gotOffline streamFinish=$gotStreamFinish text='${lastText.take(40)}'"
+                )
+                completeWithFinal()
+                return
+            }
+            mainHandler.postDelayed(this, 200L)
+        }
+    }
 
     private val http = OkHttpClient.Builder()
         .pingInterval(15, TimeUnit.SECONDS)
@@ -64,16 +105,23 @@ class DouTypeWebSocketManager(
             closed.set(false)
             finalized.set(false)
         }
+        cancelFinishTimers()
         state = RecognitionState.PROCESSING
         onState(state)
         sessionReady.set(false)
         finishing.set(false)
+        finishFramesSent.set(false)
         finalized.set(false)
         firstFrame = true
         frameIndex = 0
         audioT0Ms = System.currentTimeMillis()
         sessionId = ""
         lastText = ""
+        bestRank = 0
+        gotOffline = false
+        gotStreamFinish = false
+        sessionFinishedSeen = false
+        lastImproveAtMs = 0L
         pendingAudio.clear()
         return try {
             credentials = DouTypeCredentialManager(context).ensure()
@@ -125,16 +173,26 @@ class DouTypeWebSocketManager(
     }
 
     fun finish() {
-        if (closed.get() || !finishing.compareAndSet(false, true)) return
-        FileLogger.i(TAG, "finish() lastText='${lastText.take(40)}'")
+        if (closed.get() || finalized.get()) return
+        val firstCall = finishing.compareAndSet(false, true)
+        if (!firstCall && !sessionReady.get()) return
+        FileLogger.i(
+            TAG,
+            "finish() first=$firstCall lastText='${lastText.take(40)}' sessionReady=${sessionReady.get()}"
+        )
+        // 松手后进入「识别优化中」，等待 multipass/offline 结果
+        if (firstCall) {
+            state = RecognitionState.PROCESSING
+            onState(state)
+            cancelFinishTimers()
+            mainHandler.postDelayed(finishTimeoutRunnable, FINISH_WAIT_MS)
+        }
         try {
             if (sessionReady.get()) {
-                // 末帧 + FinishSession
-                socket?.send(ByteString.of(*audioEnvelope(ByteArray(FRAME_BYTES), frameState = 9, last = true)))
-                socket?.send(ByteString.of(*control("FinishSession", "")))
-            } else {
-                // 尚未建好会话就松手：直接以当前文本收尾
-                completeWithFinal()
+                sendFinishFrames()
+            } else if (firstCall) {
+                // 会话尚未就绪：先标记 finishing，等 SessionStarted 再发末帧
+                FileLogger.i(TAG, "finish deferred until SessionStarted")
             }
         } catch (e: Exception) {
             FileLogger.e(TAG, "finish failed: ${e.message}")
@@ -142,8 +200,23 @@ class DouTypeWebSocketManager(
         }
     }
 
+    private fun sendFinishFrames() {
+        if (!finishFramesSent.compareAndSet(false, true)) return
+        // 末段静音 + finish_audio 末帧，触发服务端 VAD 收口与 twopass
+        repeat(TRAIL_SILENCE_FRAMES) {
+            socket?.send(
+                ByteString.of(
+                    *audioEnvelope(ByteArray(FRAME_BYTES), frameState = 3, last = false)
+                )
+            )
+        }
+        socket?.send(ByteString.of(*audioEnvelope(ByteArray(FRAME_BYTES), frameState = 9, last = true)))
+        socket?.send(ByteString.of(*control("FinishSession", "")))
+    }
+
     fun close() {
         if (!closed.compareAndSet(false, true)) return
+        cancelFinishTimers()
         sessionReady.set(false)
         sessionId = ""
         try {
@@ -173,7 +246,12 @@ class DouTypeWebSocketManager(
     private fun completeWithFinal() {
         // 防止被多个路径重复调用导致多次 onFinal（finish/onFailure/onClosed/SessionFinished/handlePayload）
         if (!finalized.compareAndSet(false, true)) return
+        cancelFinishTimers()
         val text = lastText
+        FileLogger.i(
+            TAG,
+            "completeWithFinal text='${text.take(40)}' offline=$gotOffline streamFinish=$gotStreamFinish rank=$bestRank"
+        )
         if (text.isNotBlank()) {
             onFinal(text)
         } else {
@@ -184,10 +262,51 @@ class DouTypeWebSocketManager(
     }
 
     private fun fail(message: String) {
+        cancelFinishTimers()
         state = RecognitionState.ERROR
         onState(state)
         onError(message)
         close()
+    }
+
+    private fun cancelFinishTimers() {
+        mainHandler.removeCallbacks(finishTimeoutRunnable)
+        mainHandler.removeCallbacks(offlineGraceRunnable)
+        mainHandler.removeCallbacks(stableCheckRunnable)
+    }
+
+    private fun beginOfflineGrace() {
+        if (finalized.get() || closed.get()) return
+        sessionFinishedSeen = true
+        lastImproveAtMs = System.currentTimeMillis()
+        mainHandler.removeCallbacks(offlineGraceRunnable)
+        mainHandler.postDelayed(offlineGraceRunnable, OFFLINE_GRACE_MS)
+        mainHandler.removeCallbacks(stableCheckRunnable)
+        mainHandler.postDelayed(stableCheckRunnable, STABLE_MS)
+        // 已有 offline 且文本已稳定时尽快收尾
+        maybeCompleteAfterStable()
+    }
+
+    private fun maybeCompleteAfterStable() {
+        if (!finishing.get() || !sessionFinishedSeen || finalized.get() || closed.get()) return
+        val stableLongEnough = System.currentTimeMillis() - lastImproveAtMs >= STABLE_MS
+        if (stableLongEnough && (gotOffline || gotStreamFinish)) {
+            completeWithFinal()
+        }
+    }
+
+    /**
+     * 与 Python [final_text] 一致：优先更长文本，同长度时优先 offline/sentence 等更高 rank。
+     * 绝不因为更短的 offline 重写而覆盖已有长结果。
+     */
+    private fun considerText(text: String, rank: Int): Boolean {
+        if (!DouTypeResultSelector.isBetter(lastText, bestRank, text, rank)) return false
+        if (text != lastText) {
+            lastImproveAtMs = System.currentTimeMillis()
+        }
+        lastText = text
+        bestRank = maxOf(bestRank, rank)
+        return true
     }
 
     private inner class Listener : WebSocketListener() {
@@ -286,7 +405,7 @@ class DouTypeWebSocketManager(
 
     private fun audioEnvelope(audio: ByteArray, frameState: Int, last: Boolean): ByteArray {
         // 时间戳 = 逻辑音频时间线: frameIndex * frameMs (20ms)，非 wall clock
-        val ts = audioT0Ms + frameIndex * 20L
+        val ts = audioT0Ms + frameIndex * FRAME_MS.toLong()
         frameIndex++
         // extra 中携带 finish_audio/force_asr_twopass 标志，触发服务器做二遍校正
         val extra = if (last) {
@@ -380,12 +499,19 @@ class DouTypeWebSocketManager(
             }
             "SessionStarted" -> {
                 sessionReady.set(true)
-                state = RecognitionState.LISTENING
-                onState(state)
+                if (!finishing.get()) {
+                    state = RecognitionState.LISTENING
+                    onState(state)
+                }
                 flushPendingAudio()
-                if (finishing.get()) {
-                    // 用户已松手，会话刚就绪：立刻收尾
-                    finish()
+                if (finishing.get() && !finalized.get()) {
+                    // 用户已松手、会话刚就绪：补发末帧与 FinishSession
+                    try {
+                        sendFinishFrames()
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "deferred finish failed: ${e.message}")
+                        completeWithFinal()
+                    }
                 }
             }
             "TaskFailed", "SessionFailed" -> {
@@ -395,8 +521,17 @@ class DouTypeWebSocketManager(
                 return
             }
             "SessionFinished", "TaskFinished" -> {
-                completeWithFinal()
-                return
+                // 对齐 Python finish()：SessionFinished 后仍给 offline/nonstream 宽限期
+                if (finishing.get()) {
+                    beginOfflineGrace()
+                } else {
+                    // 服务端主动结束（罕见）：仍尽量等 multipass
+                    finishing.set(true)
+                    state = RecognitionState.PROCESSING
+                    onState(state)
+                    beginOfflineGrace()
+                }
+                // 不 return：同包可能还带 payload 结果
             }
         }
 
@@ -426,18 +561,29 @@ class DouTypeWebSocketManager(
             val streamDone = item.optBoolean("stream_asr_finish")
             val vadDone = item.optBoolean("is_vad_finished") || extra.optBoolean("vad_end")
             val wireInterim = item.optBoolean("is_interim", true)
-            val isFinal = isOffline || streamDone || vadDone || !wireInterim
 
-            lastText = text
-            // 录音过程中只更新 partial，避免触发 onVoiceComplete 退出语音模式
-            onPartial(text)
-            state = if (isFinal) RecognitionState.PROCESSING else RecognitionState.LISTENING
+            val rank = DouTypeResultSelector.rank(
+                isOffline = isOffline,
+                streamDone = streamDone,
+                vadDone = vadDone,
+                wireInterim = wireInterim
+            )
+            if (isOffline) gotOffline = true
+            if (streamDone) gotStreamFinish = true
+
+            val updated = considerText(text, rank)
+            if (updated) {
+                // 录音/优化过程中只更新 partial，避免触发 onVoiceComplete 退出语音模式
+                onPartial(lastText)
+            }
+
+            val optimizing = finishing.get() || isOffline || streamDone || vadDone || !wireInterim
+            state = if (optimizing) RecognitionState.PROCESSING else RecognitionState.LISTENING
             onState(state)
 
-            // 若用户已松手，收到最终结果即可收尾
-            if (isFinal && finishing.get()) {
-                completeWithFinal()
-                return
+            // 松手后绝不因 stream/vad 立刻 complete：等 SessionFinished 宽限或 offline 稳定
+            if (finishing.get() && sessionFinishedSeen) {
+                maybeCompleteAfterStable()
             }
         }
     }
