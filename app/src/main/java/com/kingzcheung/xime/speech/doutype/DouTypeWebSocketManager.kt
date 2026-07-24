@@ -49,6 +49,7 @@ class DouTypeWebSocketManager(
     private val sessionReady = AtomicBoolean(false)
     private val finishing = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
+    private val finalized = AtomicBoolean(false)
     private var lastText = ""
     private val pendingAudio = ArrayList<ByteArray>()
 
@@ -58,11 +59,16 @@ class DouTypeWebSocketManager(
         .build()
 
     fun connect(): Boolean {
-        if (closed.get()) return false
+        if (closed.get()) {
+            // isSttKeepModelInRam=true 时后端不释放，需要重置状态以支持重新连接
+            closed.set(false)
+            finalized.set(false)
+        }
         state = RecognitionState.PROCESSING
         onState(state)
         sessionReady.set(false)
         finishing.set(false)
+        finalized.set(false)
         firstFrame = true
         frameIndex = 0
         audioT0Ms = System.currentTimeMillis()
@@ -163,6 +169,8 @@ class DouTypeWebSocketManager(
     }
 
     private fun completeWithFinal() {
+        // 防止被多个路径重复调用导致多次 onFinal（finish/onFailure/onClosed/SessionFinished/handlePayload）
+        if (!finalized.compareAndSet(false, true)) return
         val text = lastText
         if (text.isNotBlank()) {
             onFinal(text)
