@@ -43,6 +43,8 @@ class DouTypeWebSocketManager(
     private val taskId = UUID.randomUUID().toString()
     private var sessionId = ""
     private var firstFrame = true
+    private var frameIndex = 0
+    private var audioT0Ms = 0L
     private var credentials: DouTypeCredentials? = null
     private val sessionReady = AtomicBoolean(false)
     private val finishing = AtomicBoolean(false)
@@ -68,6 +70,8 @@ class DouTypeWebSocketManager(
         finishing.set(false)
         finalized.set(false)
         firstFrame = true
+        frameIndex = 0
+        audioT0Ms = System.currentTimeMillis()
         sessionId = ""
         lastText = ""
         pendingAudio.clear()
@@ -126,7 +130,7 @@ class DouTypeWebSocketManager(
         try {
             if (sessionReady.get()) {
                 // 末帧 + FinishSession
-                socket?.send(ByteString.of(*audioEnvelope(ByteArray(FRAME_BYTES), 9)))
+                socket?.send(ByteString.of(*audioEnvelope(ByteArray(FRAME_BYTES), frameState = 9, last = true)))
                 socket?.send(ByteString.of(*control("FinishSession", "")))
             } else {
                 // 尚未建好会话就松手：直接以当前文本收尾
@@ -154,7 +158,7 @@ class DouTypeWebSocketManager(
     private fun dispatchFrame(frame: ByteArray) {
         val frameState = if (firstFrame) 1 else 3
         firstFrame = false
-        socket?.send(ByteString.of(*audioEnvelope(frame, frameState)))
+        socket?.send(ByteString.of(*audioEnvelope(frame, frameState = frameState, last = false)))
     }
 
     private fun flushPendingAudio() {
@@ -280,14 +284,28 @@ class DouTypeWebSocketManager(
         return concat(*parts.toTypedArray())
     }
 
-    private fun audioEnvelope(audio: ByteArray, frameState: Int): ByteArray {
-        val rid = sessionId.ifBlank { taskId }
+    private fun audioEnvelope(audio: ByteArray, frameState: Int, last: Boolean): ByteArray {
+        // 时间戳 = 逻辑音频时间线: frameIndex * frameMs (20ms)，非 wall clock
+        val ts = audioT0Ms + frameIndex * 20L
+        frameIndex++
+        // extra 中携带 finish_audio/force_asr_twopass 标志，触发服务器做二遍校正
+        val extra = if (last) {
+            JSONObject()
+                .put("finish_audio", true)
+                .put("force_asr_twopass", true)
+        } else {
+            JSONObject()
+        }
+        val meta = JSONObject()
+            .put("extra", extra)
+            .put("timestamp_ms", ts)
+            .toString()
         return concat(
             str(3, "ASR"),
             str(5, "TaskRequest"),
-            str(6, JSONObject().put("timestamp_ms", System.currentTimeMillis()).toString()),
+            str(6, meta),
             bytes(7, audio),
-            str(8, rid),
+            str(8, taskId),
             integer(9, frameState)
         )
     }
