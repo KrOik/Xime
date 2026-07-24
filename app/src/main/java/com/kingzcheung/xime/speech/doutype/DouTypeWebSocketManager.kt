@@ -68,6 +68,7 @@ class DouTypeWebSocketManager(
         finishing.set(false)
         finalized.set(false)
         firstFrame = true
+        sessionId = ""
         lastText = ""
         pendingAudio.clear()
         return try {
@@ -140,6 +141,7 @@ class DouTypeWebSocketManager(
     fun close() {
         if (!closed.compareAndSet(false, true)) return
         sessionReady.set(false)
+        sessionId = ""
         try {
             socket?.cancel()
         } catch (_: Exception) {
